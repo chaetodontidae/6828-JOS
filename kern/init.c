@@ -3,6 +3,7 @@
 #include <inc/stdio.h>
 #include <inc/string.h>
 #include <inc/assert.h>
+#include <inc/x86.h>
 
 #include <kern/monitor.h>
 #include <kern/console.h>
@@ -10,7 +11,6 @@
 #include <kern/kclock.h>
 #include <kern/env.h>
 #include <kern/trap.h>
-
 
 void
 i386_init(void)
