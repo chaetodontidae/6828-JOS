@@ -1,4 +1,4 @@
-#include <inc/assert.h>
+ #include <inc/assert.h>
 #include <inc/x86.h>
 #include <kern/spinlock.h>
 #include <kern/env.h>
@@ -11,8 +11,23 @@ void sched_halt(void);
 void
 sched_yield(void)
 {
-	struct Env *idle;
 
+   
+	struct Env *idle=NULL;
+	int index = curenv?ENVX(curenv->env_id):0;
+	bool isFound = false;
+	for(int i=0;i<NENV;i++){
+	    if(envs[index].env_status == ENV_RUNNABLE && curenv!= &envs[index]){
+	        idle = &envs[index];
+	        env_run(&envs[index]);
+	        return ;
+	    }
+	    index = index==NENV-1?0:index+1;
+	}
+	if(!idle && curenv!=NULL && curenv->env_status == ENV_RUNNING){
+	    env_run(curenv);
+	}
+	sched_halt();
 	// Implement simple round-robin scheduling.
 	//
 	// Search through 'envs' for an ENV_RUNNABLE environment in
@@ -32,7 +47,31 @@ sched_yield(void)
 	// LAB 4: Your code here.
 
 	// sched_halt never returns
-	sched_halt();
+	//sched_halt();
+	
+	
+	
+    /*
+    struct Env *idle;
+    idle = (curenv == NULL) ? envs : (curenv + 1);
+    bool flag = false;
+    int startid = idle - envs;
+    for(size_t i = startid, j = 0; j < NENV-1; i++, j++) {
+        if(envs[i%NENV].env_status == ENV_RUNNABLE) {
+            flag = true;
+            env_run(&envs[i%NENV]);
+            break;
+        }
+    }
+    // check idle for the last time, for the time it is running
+    if(!flag && curenv != NULL && curenv->env_status == ENV_RUNNING)
+        env_run(curenv);
+    if (!flag) {
+        // sched_halt never returns
+        sched_halt();
+    }
+    */
+    
 }
 
 // Halt this CPU when there is nothing to do. Wait until the
@@ -76,7 +115,7 @@ sched_halt(void)
 		"pushl $0\n"
 		"pushl $0\n"
 		// Uncomment the following line after completing exercise 13
-		//"sti\n"
+		"sti\n"
 		"1:\n"
 		"hlt\n"
 		"jmp 1b\n"

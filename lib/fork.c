@@ -11,6 +11,7 @@
 // Custom page fault handler - if faulting page is copy-on-write,
 // map in our own private writable copy.
 //
+
 static void
 pgfault(struct UTrapframe *utf)
 {
@@ -23,7 +24,11 @@ pgfault(struct UTrapframe *utf)
 	// Hint:
 	//   Use the read-only page table mappings at uvpt
 	//   (see <inc/memlayout.h>).
-
+        if(err&FEC_WR&&uvpt[PGNUM(addr)]&PTE_COW){
+          
+        }else{
+            panic("Not a valid pgfault for copy-on-write page\n");
+        }
 	// LAB 4: Your code here.
 
 	// Allocate a new page, map it at a temporary location (PFTEMP),
@@ -33,8 +38,14 @@ pgfault(struct UTrapframe *utf)
 	//   You should make three system calls.
 
 	// LAB 4: Your code here.
-
-	panic("pgfault not implemented");
+	if((r=sys_page_alloc(sys_getenvid(),PFTEMP,PTE_P|PTE_U|PTE_W))<0)
+	    panic("pgft:%e\n",r);
+        memcpy((void*)PFTEMP,(void*)ROUNDDOWN((uintptr_t)addr,PGSIZE),PGSIZE);
+        if((r=sys_page_map(sys_getenvid(),(void*)PFTEMP,sys_getenvid(),(void*)ROUNDDOWN((uintptr_t)addr,PGSIZE),PTE_P|PTE_U|PTE_W))<0)
+            panic("pgft:%e\n",r);
+        if((r=sys_page_unmap(sys_getenvid(),(void*)PFTEMP))<0)
+            panic("pgft:%e\n",r);
+	//panic("pgfault not implemented");
 }
 
 //
@@ -54,8 +65,22 @@ duppage(envid_t envid, unsigned pn)
 	int r;
 
 	// LAB 4: Your code here.
-	panic("duppage not implemented");
-	return 0;
+	//panic("duppage not implemented");
+	r = uvpt[pn];
+	if(r&PTE_SHARE){
+	    r=sys_page_map(0,(void*)(pn*PGSIZE),envid,(void*)(pn*PGSIZE),uvpt[pn]&PTE_SYSCALL);
+	    return r;
+	}
+	if(r&PTE_W||r&PTE_COW){
+	    r=sys_page_map(0,(void*)(pn*PGSIZE),envid,(void*)(pn*PGSIZE),PTE_P|PTE_U|PTE_COW);
+	    if(r){
+	        return r;
+	    }
+	    r=sys_page_map(0,(void*)(pn*PGSIZE),0,(void*)(pn*PGSIZE),PTE_P|PTE_U|PTE_COW);
+	}else{
+	    r=sys_page_map(0,(void*)(pn*PGSIZE),envid,(void*)(pn*PGSIZE),PTE_P|PTE_U);
+	}
+	return r;
 }
 
 //
@@ -78,7 +103,35 @@ envid_t
 fork(void)
 {
 	// LAB 4: Your code here.
-	panic("fork not implemented");
+	//panic("fork not implemented");
+
+	int res=0;
+	set_pgfault_handler(pgfault);
+	envid_t child = sys_exofork();
+	if(child==0){
+	    thisenv = &envs[ENVX(sys_getenvid())];
+	    return 0;
+	}
+	if(child<0) return child;
+	uintptr_t va = 0;
+	for(va = 0;va<USTACKTOP;va+=PGSIZE){
+	    if(uvpd[PDX(va)]&PTE_P && uvpt[PGNUM(va)]&PTE_P){
+	        res=duppage(child,PGNUM(va));
+	        if(res<0) return res;
+	    }
+	}
+	if((res=sys_page_alloc(child,(void*)(UXSTACKTOP-PGSIZE),PTE_P|PTE_U|PTE_W))<0)
+	    return res;
+	/*
+	if(!child)
+	    thisenv = &envs[ENVX(sys_getenvid())];
+	*/
+	void _pgfault_upcall();
+	sys_env_set_pgfault_upcall(child,_pgfault_upcall);
+	res = sys_env_set_status(child,ENV_RUNNABLE);
+	if(res<0) return res;
+	return child;
+
 }
 
 // Challenge!
